@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme (default) */
+    --color-canvas: 250 247 242;
+    --color-canvas-soft: 241 235 227;
+    --color-paper: 31 27 41;
+    --color-muted: 107 102 122;
+    --color-surface: 18 15 23;
+  }
+
+  [data-theme="dark"] {
+    --color-canvas: 18 15 23;
+    --color-canvas-soft: 27 23 35;
+    --color-paper: 244 242 247;
+    --color-muted: 140 136 166;
+    --color-surface: 255 255 255;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  body {
+    background-image: radial-gradient(circle at 20% 15%, rgba(255, 111, 145, 0.10), transparent 45%),
+      radial-gradient(circle at 80% 85%, rgba(255, 224, 125, 0.10), transparent 45%);
+    background-attachment: fixed;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  ::selection {
+    background: rgba(255, 224, 125, 0.35);
+  }
+
+  :focus-visible {
+    outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
