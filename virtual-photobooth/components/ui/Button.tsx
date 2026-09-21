@@ -5,7 +5,11 @@ import { motion } from "framer-motion";
 
 type Variant = "primary" | "secondary" | "ghost";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps
+  extends Omit
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    "onAnimationStart" | "onAnimationEnd" | "onAnimationIteration" | "onDrag" | "onDragStart" | "onDragEnd"
+  > {
   variant?: Variant;
   isLoading?: boolean;
 }
