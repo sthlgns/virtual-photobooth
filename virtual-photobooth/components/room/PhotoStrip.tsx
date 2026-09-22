@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { compositeStripWithCaption } from "@/utils/compositeCaption";
@@ -16,12 +16,29 @@ interface PhotoStripProps {
 
 export function PhotoStrip({ stripDataUrl, uploadError, caption, onCaptionChange, onRetake }: PhotoStripProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const draggingRef = useRef(false);
   const [downloading, setDownloading] = useState(false);
+  const [renderedWidth, setRenderedWidth] = useState(0);
+
+  // Measure the actual displayed image width in JS (rather than a CSS
+  // containment trick, which was previously causing the strip's wrapper to
+  // collapse to zero size and hide the image entirely).
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el) return;
+
+    const updateWidth = () => setRenderedWidth(el.clientWidth);
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [stripDataUrl]);
 
   function positionFromPointer(clientX: number, clientY: number) {
     const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return null;
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
     const xPct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
     const yPct = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
     return { xPct, yPct };
@@ -59,6 +76,8 @@ export function PhotoStrip({ stripDataUrl, uploadError, caption, onCaptionChange
     }
   }
 
+  const captionFontSize = renderedWidth > 0 ? Math.max(12, Math.min(40, renderedWidth * 0.05)) : 16;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 24, scale: 0.96 }}
@@ -66,17 +85,15 @@ export function PhotoStrip({ stripDataUrl, uploadError, caption, onCaptionChange
       transition={{ duration: 0.5, ease: "easeOut" }}
       className="flex flex-col items-center gap-6"
     >
-      <div
-        ref={containerRef}
-        className="relative inline-block max-h-[70vh]"
-        style={{ containerType: "inline-size" }}
-      >
+      <div ref={containerRef} className="relative inline-block">
         <motion.img
+          ref={imgRef}
           initial={{ filter: "brightness(3)" }}
           animate={{ filter: "brightness(1)" }}
           transition={{ duration: 0.6 }}
           src={stripDataUrl}
           alt="Your photobooth strip"
+          onLoad={() => setRenderedWidth(imgRef.current?.clientWidth ?? 0)}
           className="block max-h-[70vh] w-auto select-none"
           draggable={false}
         />
@@ -93,7 +110,7 @@ export function PhotoStrip({ stripDataUrl, uploadError, caption, onCaptionChange
               transform: "translate(-50%, -50%)",
               fontFamily: caption.font,
               color: caption.color,
-              fontSize: "clamp(12px, 5cqw, 40px)",
+              fontSize: `${captionFontSize}px`,
               cursor: "grab",
               touchAction: "none",
               whiteSpace: "nowrap",
