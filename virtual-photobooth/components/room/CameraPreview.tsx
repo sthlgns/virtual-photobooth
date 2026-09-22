@@ -10,6 +10,7 @@ interface CameraPreviewProps {
   remoteVideoRef: RefObject<HTMLVideoElement>;
   cameraStatus: CameraStatus;
   remoteStreamActive: boolean;
+  reconnecting: boolean;
   cameraErrorMessage: string | null;
 }
 
@@ -18,6 +19,7 @@ export function CameraPreview({
   remoteVideoRef,
   cameraStatus,
   remoteStreamActive,
+  reconnecting,
   cameraErrorMessage,
 }: CameraPreviewProps) {
   return (
@@ -46,7 +48,9 @@ export function CameraPreview({
           playsInline
           className={`h-full w-full -scale-x-100 object-cover ${remoteStreamActive ? "" : "hidden"}`}
         />
-        {!remoteStreamActive ? <Spinner label="Connecting to partner's camera…" /> : null}
+        {!remoteStreamActive ? (
+          <Spinner label={reconnecting ? "Reconnecting…" : "Connecting to partner's camera…"} />
+        ) : null}
       </VideoTile>
     </div>
   );
