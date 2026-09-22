@@ -7,6 +7,7 @@ import { useRoom } from "@/hooks/useRoom";
 import { useRealtimeRoom } from "@/hooks/useRealtimeRoom";
 import { useCamera } from "@/hooks/useCamera";
 import { useWebRTCPeer } from "@/hooks/useWebRTCPeer";
+import { useClockSync } from "@/hooks/useClockSync";
 import { usePhotoSession } from "@/hooks/usePhotoSession";
 import { WaitingScreen } from "@/components/room/WaitingScreen";
 import { CameraPreview } from "@/components/room/CameraPreview";
@@ -37,6 +38,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     events,
     sendEvent,
   });
+  const { clockOffsetMs } = useClockSync({ mySlot, partnerConnected, events, sendEvent });
 
   const captureLocalFrame = useCallback(() => captureVideoFrame(localVideoRef.current), [localVideoRef]);
   const captureRemoteFrame = useCallback(() => captureVideoFrame(remoteVideoRef.current), [remoteVideoRef]);
@@ -58,6 +60,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     sendEvent,
     captureLocalFrame,
     captureRemoteFrame,
+    clockOffsetMs,
   });
 
   const [partnerLeftDuringSession, setPartnerLeftDuringSession] = useState(false);
