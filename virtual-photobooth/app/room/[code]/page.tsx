@@ -14,6 +14,7 @@ import { CountdownOverlay } from "@/components/room/CountdownOverlay";
 import { SessionControls } from "@/components/room/SessionControls";
 import { PhotoStrip } from "@/components/room/PhotoStrip";
 import { StripCustomizer } from "@/components/room/StripCustomizer";
+import { CaptionEditor } from "@/components/room/CaptionEditor";
 import { RoomCodeDisplay } from "@/components/room/RoomCodeDisplay";
 import { Spinner } from "@/components/ui/Spinner";
 import { ErrorToast } from "@/components/ui/ErrorToast";
@@ -29,7 +30,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   });
   const { videoRef: localVideoRef, status: cameraStatus, errorMessage: cameraErrorMessage, requestCamera, stream } =
     useCamera();
-  const { remoteVideoRef, remoteStreamActive } = useWebRTCPeer({
+  const { remoteVideoRef, remoteStreamActive, reconnecting } = useWebRTCPeer({
     localStream: stream,
     mySlot,
     partnerConnected,
@@ -46,6 +47,8 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     stripUploadError,
     background,
     updateBackground,
+    caption,
+    updateCaption,
     startSession,
     retakeSession,
   } = usePhotoSession({
@@ -60,14 +63,12 @@ export default function RoomPage({ params }: { params: { code: string } }) {
   const [partnerLeftDuringSession, setPartnerLeftDuringSession] = useState(false);
   const wasPartnerConnected = useRef(false);
 
-  // Request camera access as soon as both participants are present.
   useEffect(() => {
     if (partnerConnected && cameraStatus === "idle") {
       void requestCamera();
     }
   }, [partnerConnected, cameraStatus, requestCamera]);
 
-  // If the partner drops mid-session, reset gracefully and let them know.
   useEffect(() => {
     if (wasPartnerConnected.current && !partnerConnected && session.phase !== "idle" && session.phase !== "complete") {
       setPartnerLeftDuringSession(true);
@@ -75,6 +76,13 @@ export default function RoomPage({ params }: { params: { code: string } }) {
     }
     wasPartnerConnected.current = partnerConnected;
   }, [partnerConnected, session.phase, retakeSession]);
+
+  function handleExitClick(e: React.MouseEvent) {
+    const midSession = session.phase !== "idle" && session.phase !== "complete";
+    if (midSession && !window.confirm("You're in the middle of a session — leave anyway?")) {
+      e.preventDefault();
+    }
+  }
 
   if (loading) {
     return (
@@ -98,6 +106,14 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center gap-10 px-6 py-16">
+      <Link
+        href="/"
+        onClick={handleExitClick}
+        className="fixed left-4 top-4 z-50 flex h-10 items-center gap-1.5 rounded-full border border-surface/15 bg-surface/5 px-4 text-sm text-paper backdrop-blur-glass transition-colors hover:bg-surface/10"
+      >
+        ← Exit
+      </Link>
+
       {!partnerConnected ? (
         <WaitingScreen code={room.code} />
       ) : (
@@ -114,6 +130,7 @@ export default function RoomPage({ params }: { params: { code: string } }) {
               remoteVideoRef={remoteVideoRef}
               cameraStatus={cameraStatus}
               remoteStreamActive={remoteStreamActive}
+              reconnecting={reconnecting}
               cameraErrorMessage={cameraErrorMessage}
             />
             <CountdownOverlay session={session} />
@@ -125,8 +142,15 @@ export default function RoomPage({ params }: { params: { code: string } }) {
 
           {session.phase === "complete" && stripDataUrl ? (
             <>
-              <PhotoStrip stripDataUrl={stripDataUrl} uploadError={stripUploadError} onRetake={retakeSession} />
+              <PhotoStrip
+                stripDataUrl={stripDataUrl}
+                uploadError={stripUploadError}
+                caption={caption}
+                onCaptionChange={updateCaption}
+                onRetake={retakeSession}
+              />
               <StripCustomizer background={background} onChange={updateBackground} />
+              <CaptionEditor caption={caption} onChange={updateCaption} />
             </>
           ) : null}
         </motion.div>
