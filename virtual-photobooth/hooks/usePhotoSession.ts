@@ -33,6 +33,8 @@ interface UsePhotoSessionOptions {
   sendEvent: (event: RealtimeEvent) => Promise<void>;
   captureLocalFrame: () => string | null;
   captureRemoteFrame: () => string | null;
+  /** Estimated (partner's clock − my clock) in ms, from useClockSync. */
+  clockOffsetMs: number;
 }
 
 interface UsePhotoSessionResult {
@@ -78,6 +80,7 @@ export function usePhotoSession({
   sendEvent,
   captureLocalFrame,
   captureRemoteFrame,
+  clockOffsetMs,
 }: UsePhotoSessionOptions): UsePhotoSessionResult {
   const [session, setSession] = useState<SessionState>({
     phase: "idle",
@@ -96,6 +99,8 @@ export function usePhotoSession({
   const rafRef = useRef<number | null>(null);
   const generatingRef = useRef(false);
   const processedCountRef = useRef(0);
+  const clockOffsetRef = useRef(clockOffsetMs);
+  clockOffsetRef.current = clockOffsetMs;
 
   const beginLocalSession = useCallback((startedBy: ParticipantSlot, startedAt: number) => {
     capturedShotsRef.current = new Set();
@@ -138,8 +143,6 @@ export function usePhotoSession({
     [photos]
   );
 
-  // Caption is only ever shown as an overlay and baked in at download time
-  // (see PhotoStrip.tsx), so updating it here never touches the canvas.
   const updateCaption = useCallback((next: StripCaption) => {
     setCaption(next);
   }, []);
@@ -150,7 +153,13 @@ export function usePhotoSession({
 
     for (const event of newEvents) {
       if (event.type === "session_start") {
-        beginLocalSession(event.startedBy, event.startedAt);
+        // Events reaching us here always originated from the partner (the
+        // realtime channel doesn't echo our own broadcasts back to us), so
+        // their timestamp is in the partner's clock — translate it into
+        // ours using the offset useClockSync measured, so both sides land
+        // on the same visible countdown second.
+        const adjustedStartedAt = event.startedAt - clockOffsetRef.current;
+        beginLocalSession(event.startedBy, adjustedStartedAt);
       } else if (event.type === "session_reset") {
         capturedShotsRef.current = new Set();
         generatingRef.current = false;
