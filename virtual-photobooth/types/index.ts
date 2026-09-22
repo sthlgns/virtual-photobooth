@@ -63,7 +63,9 @@ export type RealtimeEvent =
   | { type: "session_start"; startedBy: ParticipantSlot; startedAt: number }
   | { type: "session_reset" }
   | { type: "strip_ready"; url: string }
-  | { type: "webrtc_signal"; from: ParticipantSlot; data: WebRTCSignalData };
+  | { type: "webrtc_signal"; from: ParticipantSlot; data: WebRTCSignalData }
+  | { type: "clock_ping"; from: ParticipantSlot; t1: number }
+  | { type: "clock_pong"; from: ParticipantSlot; t1: number; t2: number };
 
 export interface RoomJoinError {
   code: "invalid_format" | "not_found" | "room_full" | "expired" | "unknown";
