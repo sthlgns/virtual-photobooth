@@ -1,5 +1,3 @@
-// Core domain types shared across the app.
-
 export type ParticipantSlot = "host" | "guest";
 
 export type RoomStatus = "waiting" | "ready" | "in_session" | "completed";
@@ -24,10 +22,10 @@ export type SessionPhase =
 
 export interface SessionState {
   phase: SessionPhase;
-  shotIndex: number; // 0, 1, 2 -> which of the 3 photos is in progress
-  countdownValue: number | null; // 4,3,2,1 or null
+  shotIndex: number;
+  countdownValue: number | null;
   startedBy: ParticipantSlot | null;
-  startedAt: number | null; // epoch ms, used to derive synchronized countdown
+  startedAt: number | null;
 }
 
 export interface CapturedPhoto {
@@ -37,8 +35,19 @@ export interface CapturedPhoto {
 }
 
 // Personalizes the finished strip — shows through the borders and the
-// gaps between captures. Chosen independently per device (see note above).
+// gaps between captures. Chosen independently per device.
 export type StripBackground = { type: "color"; value: string } | { type: "image"; dataUrl: string };
+
+// An optional caption drawn on the strip, positioned by dragging.
+// xPct/yPct are 0–1 fractions of the strip's width/height, so the
+// position scales correctly regardless of how large the strip is rendered.
+export interface StripCaption {
+  text: string;
+  font: string;
+  color: string;
+  xPct: number;
+  yPct: number;
+}
 
 // WebRTC is used purely for the live partner camera preview. Supabase
 // Realtime broadcast acts as the signaling transport to exchange these.
