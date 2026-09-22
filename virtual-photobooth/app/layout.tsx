@@ -28,7 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        {/* Applies the saved (or system) theme before first paint, so there's no flash of the wrong theme. */}
+        {/* Extra display fonts used only for strip captions. */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Caveat&family=Permanent+Marker&family=Special+Elite&family=Poppins&display=swap"
+          rel="stylesheet"
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
