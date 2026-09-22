@@ -12,12 +12,19 @@ import type {
   SessionPhase,
   SessionState,
   StripBackground,
+  StripCaption,
 } from "@/types";
 
 const SHOT_CYCLE_MS = COUNTDOWN_SECONDS * 1000 + PAUSE_BETWEEN_SHOTS_MS;
-// Small buffer so the broadcast has time to reach both browsers before the
-// countdown visually begins — this is what keeps the two sides in sync.
 const START_BUFFER_MS = 900;
+
+const DEFAULT_CAPTION: StripCaption = {
+  text: "",
+  font: "Caveat",
+  color: "#120F17",
+  xPct: 0.5,
+  yPct: 0.95,
+};
 
 interface UsePhotoSessionOptions {
   roomId: string | null;
@@ -35,6 +42,8 @@ interface UsePhotoSessionResult {
   stripUploadError: string | null;
   background: StripBackground;
   updateBackground: (background: StripBackground) => Promise<void>;
+  caption: StripCaption;
+  updateCaption: (caption: StripCaption) => void;
   startSession: () => Promise<void>;
   retakeSession: () => Promise<void>;
 }
@@ -81,6 +90,7 @@ export function usePhotoSession({
   const [stripDataUrl, setStripDataUrl] = useState<string | null>(null);
   const [stripUploadError, setStripUploadError] = useState<string | null>(null);
   const [background, setBackground] = useState<StripBackground>(DEFAULT_STRIP_BACKGROUND);
+  const [caption, setCaption] = useState<StripCaption>(DEFAULT_CAPTION);
 
   const capturedShotsRef = useRef<Set<number>>(new Set());
   const rafRef = useRef<number | null>(null);
@@ -113,8 +123,6 @@ export function usePhotoSession({
     await sendEvent({ type: "session_reset" });
   }, [sendEvent]);
 
-  // Lets the person re-style their own copy of the strip after it's generated,
-  // without needing to retake the photos.
   const updateBackground = useCallback(
     async (bg: StripBackground) => {
       setBackground(bg);
@@ -130,9 +138,12 @@ export function usePhotoSession({
     [photos]
   );
 
-  // React to the partner starting or resetting a session. Processes every
-  // unseen event in order (not just the latest) so a session_start followed
-  // quickly by a session_reset can't have the reset silently swallowed.
+  // Caption is only ever shown as an overlay and baked in at download time
+  // (see PhotoStrip.tsx), so updating it here never touches the canvas.
+  const updateCaption = useCallback((next: StripCaption) => {
+    setCaption(next);
+  }, []);
+
   useEffect(() => {
     const newEvents = events.slice(processedCountRef.current);
     processedCountRef.current = events.length;
@@ -151,8 +162,6 @@ export function usePhotoSession({
     }
   }, [events, beginLocalSession]);
 
-  // Drive the state machine off a shared wall-clock timestamp so both
-  // browsers land on the same phase/countdown value independently.
   useEffect(() => {
     if (
       session.phase === "idle" ||
@@ -173,10 +182,6 @@ export function usePhotoSession({
           : { ...prev, phase, shotIndex, countdownValue }
       );
 
-      // Fire each shot's capture exactly once, right as its countdown hits
-      // zero. Checked independently per shot index (rather than off the
-      // display `shotIndex` above) so a delayed animation frame can't cause
-      // the transition into "generating" to skip the final shot's capture.
       for (let s = 0; s < TOTAL_PHOTOS; s++) {
         const captureAt = shotStartTime(startedAt, s) + COUNTDOWN_SECONDS * 1000;
         if (now >= captureAt && !capturedShotsRef.current.has(s)) {
@@ -198,7 +203,7 @@ export function usePhotoSession({
 
       if (phase === "generating" && !generatingRef.current) {
         generatingRef.current = true;
-        return; // let the generation effect below take over
+        return;
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -210,7 +215,6 @@ export function usePhotoSession({
     };
   }, [session.phase, session.startedAt, mySlot, captureLocalFrame, captureRemoteFrame]);
 
-  // Once all shots are in, composite the strip and mark the session complete.
   useEffect(() => {
     if (session.phase !== "generating" || stripDataUrl) return;
 
@@ -246,6 +250,8 @@ export function usePhotoSession({
     stripUploadError,
     background,
     updateBackground,
+    caption,
+    updateCaption,
     startSession,
     retakeSession,
   };
