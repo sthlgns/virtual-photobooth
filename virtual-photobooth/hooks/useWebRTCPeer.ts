@@ -8,6 +8,13 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+// A "disconnected" state often self-heals from a brief network blip — give
+// it this long before forcing a full reconnect.
+const DISCONNECT_GRACE_MS = 6000;
+// If it never reaches "connected" at all within this long, something's
+// blocking it — retry rather than leaving the preview stuck forever.
+const INITIAL_CONNECT_TIMEOUT_MS = 14000;
+
 interface UseWebRTCPeerOptions {
   localStream: MediaStream | null;
   mySlot: ParticipantSlot | null;
@@ -19,12 +26,13 @@ interface UseWebRTCPeerOptions {
 interface UseWebRTCPeerResult {
   remoteVideoRef: React.RefObject<HTMLVideoElement>;
   remoteStreamActive: boolean;
+  reconnecting: boolean;
 }
 
 /**
- * Sets up a single RTCPeerConnection between the two room participants so
- * each browser can show a live preview of the other's camera. The "host"
- * always initiates the offer once both sides are present with a stream.
+ * Automatically rebuilds the peer connection if it fails, stalls, or never
+ * connects in the first place — previously any of those required leaving
+ * and recreating the whole room to recover from.
  */
 export function useWebRTCPeer({
   localStream,
@@ -39,8 +47,9 @@ export function useWebRTCPeer({
   const processedCountRef = useRef(0);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [remoteStreamActive, setRemoteStreamActive] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectTick, setReconnectTick] = useState(0);
 
-  // Tear down and recreate the connection whenever the partner (re)joins.
   useEffect(() => {
     if (!localStream || !mySlot || !partnerConnected) return;
 
@@ -48,12 +57,10 @@ export function useWebRTCPeer({
     pcRef.current = pc;
     pendingCandidates.current = [];
     processedCountRef.current = events.length;
+    setReconnecting(false);
 
     localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
-    // Just capture the stream here — the <video> element that will play it
-    // may not exist in the DOM yet (it's rendered conditionally), so binding
-    // srcObject happens in the effect below once both are ready.
     pc.ontrack = (event) => {
       const [incomingStream] = event.streams;
       if (incomingStream) setRemoteStream(incomingStream);
@@ -69,14 +76,44 @@ export function useWebRTCPeer({
       }
     };
 
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+      if (pc.connectionState === "connected") {
+        setReconnecting(false);
+        if (disconnectTimer) {
+          clearTimeout(disconnectTimer);
+          disconnectTimer = null;
+        }
+        return;
+      }
+
+      if (pc.connectionState === "failed") {
         setRemoteStream(null);
         setRemoteStreamActive(false);
+        setReconnectTick((n) => n + 1);
+        return;
+      }
+
+      if (pc.connectionState === "disconnected") {
+        setReconnecting(true);
+        if (disconnectTimer) clearTimeout(disconnectTimer);
+        disconnectTimer = setTimeout(() => {
+          setRemoteStream(null);
+          setRemoteStreamActive(false);
+          setReconnectTick((n) => n + 1);
+        }, DISCONNECT_GRACE_MS);
       }
     };
 
-    // Deterministic initiator: the host always makes the offer.
+    const initialConnectTimer = setTimeout(() => {
+      if (pc.connectionState !== "connected") {
+        setRemoteStream(null);
+        setRemoteStreamActive(false);
+        setReconnectTick((n) => n + 1);
+      }
+    }, INITIAL_CONNECT_TIMEOUT_MS);
+
     if (mySlot === "host") {
       pc.onnegotiationneeded = async () => {
         const offer = await pc.createOffer();
@@ -86,27 +123,24 @@ export function useWebRTCPeer({
     }
 
     return () => {
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      clearTimeout(initialConnectTimer);
       pc.close();
       pcRef.current = null;
       setRemoteStream(null);
       setRemoteStreamActive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localStream, mySlot, partnerConnected]);
+  }, [localStream, mySlot, partnerConnected, reconnectTick]);
 
-  // Bind the remote stream to the <video> element once both exist. The video
-  // tag is always mounted (see CameraPreview) specifically so this ref is
-  // never null by the time a stream shows up.
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
       setRemoteStreamActive(true);
+      setReconnecting(false);
     }
   }, [remoteStream]);
 
-  // Handle incoming signaling messages relayed via Realtime broadcast.
-  // Iterates every event this hook hasn't seen yet, in order, so a burst of
-  // trickling ICE candidates arriving close together can't get skipped.
   useEffect(() => {
     if (!mySlot) return;
     const pc = pcRef.current;
@@ -121,7 +155,7 @@ export function useWebRTCPeer({
     }
   }, [events, mySlot, sendEvent]);
 
-  return { remoteVideoRef, remoteStreamActive };
+  return { remoteVideoRef, remoteStreamActive, reconnecting };
 }
 
 async function handleSignal(
