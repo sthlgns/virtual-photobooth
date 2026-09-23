@@ -2,17 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ParticipantSlot, RealtimeEvent, WebRTCSignalData } from "@/types";
+import { fetchIceServers } from "@/utils/iceServers";
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
-
-// A "disconnected" state often self-heals from a brief network blip — give
-// it this long before forcing a full reconnect.
 const DISCONNECT_GRACE_MS = 6000;
-// If it never reaches "connected" at all within this long, something's
-// blocking it — retry rather than leaving the preview stuck forever.
 const INITIAL_CONNECT_TIMEOUT_MS = 14000;
 
 interface UseWebRTCPeerOptions {
@@ -29,11 +21,6 @@ interface UseWebRTCPeerResult {
   reconnecting: boolean;
 }
 
-/**
- * Automatically rebuilds the peer connection if it fails, stalls, or never
- * connects in the first place — previously any of those required leaving
- * and recreating the whole room to recover from.
- */
 export function useWebRTCPeer({
   localStream,
   mySlot,
@@ -53,79 +40,91 @@ export function useWebRTCPeer({
   useEffect(() => {
     if (!localStream || !mySlot || !partnerConnected) return;
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    pcRef.current = pc;
-    pendingCandidates.current = [];
+    let cancelled = false;
+    let pc: RTCPeerConnection | null = null;
+    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let initialConnectTimer: ReturnType<typeof setTimeout> | null = null;
+
     processedCountRef.current = events.length;
     setReconnecting(false);
 
-    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    (async () => {
+      const iceServers = await fetchIceServers();
+      if (cancelled) return;
 
-    pc.ontrack = (event) => {
-      const [incomingStream] = event.streams;
-      if (incomingStream) setRemoteStream(incomingStream);
-    };
+      pc = new RTCPeerConnection({ iceServers });
+      pcRef.current = pc;
+      pendingCandidates.current = [];
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        void sendEvent({
-          type: "webrtc_signal",
-          from: mySlot,
-          data: { kind: "ice-candidate", candidate: event.candidate.toJSON() },
-        });
-      }
-    };
+      localStream.getTracks().forEach((track) => pc!.addTrack(track, localStream));
 
-    let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+      pc.ontrack = (event) => {
+        const [incomingStream] = event.streams;
+        if (incomingStream) setRemoteStream(incomingStream);
+      };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "connected") {
-        setReconnecting(false);
-        if (disconnectTimer) {
-          clearTimeout(disconnectTimer);
-          disconnectTimer = null;
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          void sendEvent({
+            type: "webrtc_signal",
+            from: mySlot,
+            data: { kind: "ice-candidate", candidate: event.candidate.toJSON() },
+          });
         }
-        return;
-      }
+      };
 
-      if (pc.connectionState === "failed") {
-        setRemoteStream(null);
-        setRemoteStreamActive(false);
-        setReconnectTick((n) => n + 1);
-        return;
-      }
+      pc.onconnectionstatechange = () => {
+        if (!pc) return;
+        if (pc.connectionState === "connected") {
+          setReconnecting(false);
+          if (disconnectTimer) {
+            clearTimeout(disconnectTimer);
+            disconnectTimer = null;
+          }
+          return;
+        }
 
-      if (pc.connectionState === "disconnected") {
-        setReconnecting(true);
-        if (disconnectTimer) clearTimeout(disconnectTimer);
-        disconnectTimer = setTimeout(() => {
+        if (pc.connectionState === "failed") {
           setRemoteStream(null);
           setRemoteStreamActive(false);
           setReconnectTick((n) => n + 1);
-        }, DISCONNECT_GRACE_MS);
-      }
-    };
+          return;
+        }
 
-    const initialConnectTimer = setTimeout(() => {
-      if (pc.connectionState !== "connected") {
-        setRemoteStream(null);
-        setRemoteStreamActive(false);
-        setReconnectTick((n) => n + 1);
-      }
-    }, INITIAL_CONNECT_TIMEOUT_MS);
-
-    if (mySlot === "host") {
-      pc.onnegotiationneeded = async () => {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        void sendEvent({ type: "webrtc_signal", from: mySlot, data: { kind: "offer", sdp: offer } });
+        if (pc.connectionState === "disconnected") {
+          setReconnecting(true);
+          if (disconnectTimer) clearTimeout(disconnectTimer);
+          disconnectTimer = setTimeout(() => {
+            setRemoteStream(null);
+            setRemoteStreamActive(false);
+            setReconnectTick((n) => n + 1);
+          }, DISCONNECT_GRACE_MS);
+        }
       };
-    }
+
+      initialConnectTimer = setTimeout(() => {
+        if (pc && pc.connectionState !== "connected") {
+          setRemoteStream(null);
+          setRemoteStreamActive(false);
+          setReconnectTick((n) => n + 1);
+        }
+      }, INITIAL_CONNECT_TIMEOUT_MS);
+
+      if (mySlot === "host") {
+        pc.onnegotiationneeded = async () => {
+          if (!pc) return;
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          void sendEvent({ type: "webrtc_signal", from: mySlot, data: { kind: "offer", sdp: offer } });
+        };
+      }
+    })();
 
     return () => {
+      cancelled = true;
       if (disconnectTimer) clearTimeout(disconnectTimer);
-      clearTimeout(initialConnectTimer);
-      pc.close();
+      if (initialConnectTimer) clearTimeout(initialConnectTimer);
+      pc?.close();
       pcRef.current = null;
       setRemoteStream(null);
       setRemoteStreamActive(false);
