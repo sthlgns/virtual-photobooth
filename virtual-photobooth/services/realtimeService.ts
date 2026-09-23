@@ -10,13 +10,9 @@ type PresenceState = {
 export interface RoomChannelHandlers {
   onEvent: (event: RealtimeEvent) => void;
   onPresenceSync: (connectedSlots: ParticipantSlot[]) => void;
-  onDisconnect?: () => void;
+  onDisconnect?: (reason: string) => void;
 }
 
-/**
- * Opens (or reuses) the Supabase Realtime channel for a room, wiring up
- * broadcast events and presence tracking for the given participant slot.
- */
 export function connectToRoomChannel(
   roomId: string,
   slot: ParticipantSlot,
@@ -41,12 +37,16 @@ export function connectToRoomChannel(
         .map((p) => p.slot);
       handlers.onPresenceSync(slots);
     })
-    .subscribe(async (status) => {
+    .subscribe(async (status, err) => {
+      // Logged so the real reason (not just "it failed") shows up in the
+      // browser console when something goes wrong.
+      console.log("[realtime] channel status:", status, err ?? "");
+
       if (status === "SUBSCRIBED") {
         await channel.track({ slot });
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        handlers.onDisconnect?.();
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        handlers.onDisconnect?.(err?.message ?? status);
       }
     });
 
