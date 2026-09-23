@@ -17,16 +17,12 @@ interface UseRealtimeRoomOptions {
 interface UseRealtimeRoomResult {
   partnerConnected: boolean;
   connectionError: string | null;
-  /** Every event received this session, oldest first. Never mutated in place — consumers should track how much of it they've already processed. */
   events: RealtimeEvent[];
   sendEvent: (event: RealtimeEvent) => Promise<void>;
 }
 
-/**
- * Owns the room's Supabase Realtime channel: tracks presence to know when
- * the partner is connected, and surfaces the latest broadcast event so
- * other hooks (session sync, WebRTC signaling) can react to it.
- */
+const MAX_BACKOFF_MS = 10000;
+
 export function useRealtimeRoom({ roomId, slot }: UseRealtimeRoomOptions): UseRealtimeRoomResult {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const [partnerConnected, setPartnerConnected] = useState(false);
@@ -37,20 +33,49 @@ export function useRealtimeRoom({ roomId, slot }: UseRealtimeRoomOptions): UseRe
     if (!roomId || !slot) return;
 
     const partnerSlot: ParticipantSlot = slot === "host" ? "guest" : "host";
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
 
-    const channel = connectToRoomChannel(roomId, slot, {
-      onEvent: (event) => setEvents((prev) => [...prev, event]),
-      onPresenceSync: (slots) => setPartnerConnected(slots.includes(partnerSlot)),
-      onDisconnect: () => setConnectionError("Lost connection to the room. Reconnecting..."),
-    });
+    const connect = () => {
+      if (cancelled) return;
 
-    channelRef.current = channel;
+      const channel = connectToRoomChannel(roomId, slot, {
+        onEvent: (event) => setEvents((prev) => [...prev, event]),
+        onPresenceSync: (slots) => setPartnerConnected(slots.includes(partnerSlot)),
+        onDisconnect: () => {
+          if (cancelled) return;
+          setConnectionError("Lost connection to the room. Reconnecting…");
+
+          // Actually retry, with a capped exponential backoff, instead of
+          // just showing a "Reconnecting…" message that never followed through.
+          disconnectFromRoomChannel(channel);
+          channelRef.current = null;
+          attempt += 1;
+          const delay = Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);
+          retryTimer = setTimeout(connect, delay);
+        },
+      });
+
+      channelRef.current = channel;
+    };
+
+    connect();
 
     return () => {
-      disconnectFromRoomChannel(channel);
-      channelRef.current = null;
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (channelRef.current) {
+        disconnectFromRoomChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [roomId, slot]);
+
+  // Clear the error banner as soon as we're actually connected again.
+  useEffect(() => {
+    if (partnerConnected) setConnectionError(null);
+  }, [partnerConnected]);
 
   const sendEvent = useCallback(async (event: RealtimeEvent) => {
     if (!channelRef.current) return;
