@@ -43,7 +43,8 @@ export function useRealtimeRoom({ roomId, slot }: UseRealtimeRoomOptions): UseRe
       const channel = connectToRoomChannel(roomId, slot, {
         onEvent: (event) => setEvents((prev) => [...prev, event]),
         onPresenceSync: (slots) => setPartnerConnected(slots.includes(partnerSlot)),
-        onDisconnect: () => {
+      onDisconnect: (reason: string) => {
+  console.log("[realtime] disconnect reason:", reason);
           if (cancelled) return;
           setConnectionError("Lost connection to the room. Reconnecting…");
 
