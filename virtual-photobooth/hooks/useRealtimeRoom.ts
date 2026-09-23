@@ -39,19 +39,23 @@ export function useRealtimeRoom({ roomId, slot }: UseRealtimeRoomOptions): UseRe
 
     const connect = () => {
       if (cancelled) return;
+      // Guards against unsubscribe() below synchronously re-triggering this
+      // same handler again — that self-triggering loop is what caused the
+      // stack overflow.
+      let handledDisconnect = false;
 
       const channel = connectToRoomChannel(roomId, slot, {
         onEvent: (event) => setEvents((prev) => [...prev, event]),
         onPresenceSync: (slots) => setPartnerConnected(slots.includes(partnerSlot)),
-      onDisconnect: (reason: string) => {
-  console.log("[realtime] disconnect reason:", reason);
-          if (cancelled) return;
+        onDisconnect: (reason) => {
+          if (cancelled || handledDisconnect) return;
+          handledDisconnect = true;
+
+          console.log("[realtime] disconnect reason:", reason);
           setConnectionError("Lost connection to the room. Reconnecting…");
 
-          // Actually retry, with a capped exponential backoff, instead of
-          // just showing a "Reconnecting…" message that never followed through.
           disconnectFromRoomChannel(channel);
-          channelRef.current = null;
+          if (channelRef.current === channel) channelRef.current = null;
           attempt += 1;
           const delay = Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);
           retryTimer = setTimeout(connect, delay);
@@ -73,7 +77,6 @@ export function useRealtimeRoom({ roomId, slot }: UseRealtimeRoomOptions): UseRe
     };
   }, [roomId, slot]);
 
-  // Clear the error banner as soon as we're actually connected again.
   useEffect(() => {
     if (partnerConnected) setConnectionError(null);
   }, [partnerConnected]);
