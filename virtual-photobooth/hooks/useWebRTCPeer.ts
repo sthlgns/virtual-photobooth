@@ -50,6 +50,7 @@ export function useWebRTCPeer({
 
     (async () => {
       const iceServers = await fetchIceServers();
+      console.log("[webrtc] ICE servers:", iceServers.length, iceServers.map((s) => s.urls));
       if (cancelled) return;
 
       pc = new RTCPeerConnection({ iceServers });
