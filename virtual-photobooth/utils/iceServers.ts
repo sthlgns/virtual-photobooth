@@ -5,7 +5,7 @@ export async function fetchIceServers(): Promise<RTCIceServer[]> {
   ];
 
   try {
-    const response = await fetch("/api/turn-credentials");
+      const response = await fetch("/api/turn-credentials", { cache: "no-store" });
     if (!response.ok) {
       console.log("[ice] route responded", response.status);
       return stunFallback;
