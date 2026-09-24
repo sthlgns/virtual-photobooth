@@ -4,6 +4,7 @@ import { RefObject } from "react";
 import { motion } from "framer-motion";
 import { Spinner } from "@/components/ui/Spinner";
 import type { CameraStatus } from "@/hooks/useCamera";
+import type { ParticipantSlot } from "@/types";
 
 interface CameraPreviewProps {
   localVideoRef: RefObject<HTMLVideoElement>;
@@ -12,6 +13,7 @@ interface CameraPreviewProps {
   remoteStreamActive: boolean;
   reconnecting: boolean;
   cameraErrorMessage: string | null;
+  mySlot: ParticipantSlot | null;
 }
 
 export function CameraPreview({
@@ -21,37 +23,50 @@ export function CameraPreview({
   remoteStreamActive,
   reconnecting,
   cameraErrorMessage,
+  mySlot,
 }: CameraPreviewProps) {
+  const you = (
+    <VideoTile key="you" label="You">
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className={`h-full w-full -scale-x-100 object-cover ${cameraStatus === "granted" ? "" : "hidden"}`}
+      />
+      {cameraStatus === "denied" || cameraStatus === "unavailable" ? (
+        <ErrorState message={cameraErrorMessage ?? "Camera unavailable."} />
+      ) : cameraStatus !== "granted" ? (
+        <Spinner label="Starting camera…" />
+      ) : null}
+    </VideoTile>
+  );
+
+  const partner = (
+    <VideoTile key="partner" label="Partner">
+      <motion.video
+        initial={{ opacity: 0 }}
+        animate={{ opacity: remoteStreamActive ? 1 : 0 }}
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className={`h-full w-full -scale-x-100 object-cover ${remoteStreamActive ? "" : "hidden"}`}
+      />
+      {!remoteStreamActive ? (
+        <Spinner label={reconnecting ? "Reconnecting…" : "Connecting to partner's camera…"} />
+      ) : null}
+    </VideoTile>
+  );
+
+  // Host is always on the left, guest always on the right — on both
+  // screens — so a couple pose (like a heart shape) lines up the same way
+  // no matter who's viewing, and it matches the final strip's layout too.
+  const [leftTile, rightTile] = mySlot === "guest" ? [partner, you] : [you, partner];
+
   return (
     <div className="grid w-full grid-cols-2 gap-4">
-      <VideoTile label="You">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className={`h-full w-full -scale-x-100 object-cover ${cameraStatus === "granted" ? "" : "hidden"}`}
-        />
-        {cameraStatus === "denied" || cameraStatus === "unavailable" ? (
-          <ErrorState message={cameraErrorMessage ?? "Camera unavailable."} />
-        ) : cameraStatus !== "granted" ? (
-          <Spinner label="Starting camera…" />
-        ) : null}
-      </VideoTile>
-
-      <VideoTile label="Partner">
-        <motion.video
-          initial={{ opacity: 0 }}
-          animate={{ opacity: remoteStreamActive ? 1 : 0 }}
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className={`h-full w-full -scale-x-100 object-cover ${remoteStreamActive ? "" : "hidden"}`}
-        />
-        {!remoteStreamActive ? (
-          <Spinner label={reconnecting ? "Reconnecting…" : "Connecting to partner's camera…"} />
-        ) : null}
-      </VideoTile>
+      {leftTile}
+      {rightTile}
     </div>
   );
 }
