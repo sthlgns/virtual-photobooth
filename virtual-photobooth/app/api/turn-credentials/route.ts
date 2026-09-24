@@ -1,30 +1,25 @@
 import { NextResponse } from "next/server";
 
+// Serves a pre-generated TURN credential directly, rather than calling
+// Metered's live API each time — simpler and removes a network dependency,
+// and this credential doesn't need to rotate for a personal-use app.
 export async function GET() {
-  const domain = process.env.METERED_DOMAIN;
-  const secretKey = process.env.METERED_SECRET_KEY;
+  const raw = process.env.METERED_ICE_SERVERS_JSON;
 
-  if (!domain || !secretKey) {
-    return NextResponse.json({ iceServers: null, debug: "env vars missing on server" });
+  if (!raw) {
+    return NextResponse.json({ iceServers: null, debug: "METERED_ICE_SERVERS_JSON not set" });
   }
 
   try {
-    const response = await fetch(
-      `https://${domain}/api/v1/turn/credentials?apiKey=${secretKey}`,
-      { cache: "no-store" }
-    );
-
-    if (!response.ok) {
-      const bodyText = await response.text();
-      return NextResponse.json({
-        iceServers: null,
-        debug: `Metered responded ${response.status}: ${bodyText.slice(0, 200)}`,
-      });
-    }
-
-    const iceServers = await response.json();
-    return NextResponse.json({ iceServers, debug: `got ${Array.isArray(iceServers) ? iceServers.length : "non-array"} servers` });
+    const iceServers = JSON.parse(raw);
+    return NextResponse.json({
+      iceServers,
+      debug: `loaded ${Array.isArray(iceServers) ? iceServers.length : "non-array"} servers`,
+    });
   } catch (err) {
-    return NextResponse.json({ iceServers: null, debug: `fetch threw: ${err instanceof Error ? err.message : String(err)}` });
+    return NextResponse.json({
+      iceServers: null,
+      debug: `JSON parse failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
   }
 }
