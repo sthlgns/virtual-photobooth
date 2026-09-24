@@ -128,13 +128,14 @@ export default function RoomPage({ params }: { params: { code: string } }) {
           <RoomCodeDisplay code={room.code} />
 
           <div className="relative w-full">
-            <CameraPreview
+              <CameraPreview
               localVideoRef={localVideoRef}
               remoteVideoRef={remoteVideoRef}
               cameraStatus={cameraStatus}
               remoteStreamActive={remoteStreamActive}
               reconnecting={reconnecting}
               cameraErrorMessage={cameraErrorMessage}
+              mySlot={mySlot}
             />
             <CountdownOverlay session={session} />
           </div>
