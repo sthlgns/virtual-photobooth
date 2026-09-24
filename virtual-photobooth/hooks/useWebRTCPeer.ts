@@ -60,6 +60,7 @@ export function useWebRTCPeer({
       localStream.getTracks().forEach((track) => pc!.addTrack(track, localStream));
 
       pc.ontrack = (event) => {
+              console.log("[webrtc] ontrack fired, streams:", event.streams.length);
         const [incomingStream] = event.streams;
         if (incomingStream) setRemoteStream(incomingStream);
       };
@@ -76,6 +77,7 @@ export function useWebRTCPeer({
 
       pc.onconnectionstatechange = () => {
         if (!pc) return;
+         console.log("[webrtc] connection state:", pc.connectionState);
         if (pc.connectionState === "connected") {
           setReconnecting(false);
           if (disconnectTimer) {
